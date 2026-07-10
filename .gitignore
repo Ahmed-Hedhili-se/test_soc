@@ -1,0 +1,31 @@
+# Datasets
+datasets_/
+
+# Python bytecode and runtime caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables / Secrets
+.env
+.env.*
+
+# Application Data & Logs (preserve directory structure but ignore files)
+/soc-assistant/data/alerts/*
+!/soc-assistant/data/alerts/.gitkeep
+/soc-assistant/data/logs/*
+!/soc-assistant/data/logs/.gitkeep
