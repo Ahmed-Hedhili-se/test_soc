@@ -1,0 +1,10 @@
+# config/thresholds.yaml
+# Confidence bands and fast-path thresholds
+fast_path:
+  min_severity: 9.0
+  min_confidence: 0.90
+  budget_seconds: 10
+
+escalation_policy:
+  approval_required_threshold: 0.80
+  uncertain_threshold: 0.65

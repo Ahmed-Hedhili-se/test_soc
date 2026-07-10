@@ -1,0 +1,6 @@
+# config/tool_budgets.yaml
+# Per-agent MCP call caps
+triage: 4
+log_investigator: 8
+cti_enrichment: 6
+attck_mapper: 3

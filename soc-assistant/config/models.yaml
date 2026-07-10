@@ -1,0 +1,33 @@
+# config/models.yaml
+# Provider abstraction. Defaulting to Grok models (constraint 0b).
+# To use Foundation-sec-8B, change provider to 'openai' and point endpoint to local vLLM.
+
+triage:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast
+
+log_investigator:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast
+
+cti_enrichment:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast
+
+attck_mapper:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast
+
+synthesis:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast-reasoning
+
+report_generator:
+  provider: grok
+  endpoint: https://api.x.ai/v1
+  model_id: grok-4-fast
