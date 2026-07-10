@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SOC Assistant
 
 SOC Assistant is an intelligent, agentic Security Operations Center (SOC) assistant built with LangGraph and LangChain. It automates security alert triage, log investigation, CTI enrichment, MITRE ATT&CK technique mapping, and incident report generation, incorporating a Human-in-the-Loop (HITL) interface for final verification.
@@ -72,3 +73,6 @@ from rag.indexer import index_attck
 index_attck()
 ```
 This fetches the latest Enterprise ATT&CK patterns from MITRE's repository and indexes them into the vector store.
+=======
+# Agent_SOC_Assistant-
+>>>>>>> 569b20b5ece0856f6d3edde5dee8d671b8c71f88
