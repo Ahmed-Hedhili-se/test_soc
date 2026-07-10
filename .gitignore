@@ -29,3 +29,8 @@ env/
 !/soc-assistant/data/alerts/.gitkeep
 /soc-assistant/data/logs/*
 !/soc-assistant/data/logs/.gitkeep
+
+# Databases
+*.db
+*.sqlite3
+/soc-assistant/rag/db/
