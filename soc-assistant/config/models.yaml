@@ -1,33 +1,77 @@
 # config/models.yaml
-# Provider abstraction. Defaulting to Grok models (constraint 0b).
-# To use Foundation-sec-8B, change provider to 'openai' and point endpoint to local vLLM.
+# Provider abstraction per agent role.
+# Primary allocation follows the architecture diagram (docs/ARCHITECTURE.md):
+#   - orchestrator / synthesis -> Llama 3.3-70B (reasoning-heavy, reconciliation)
+#   - triage                  -> Foundation-sec-8B-Instruct (fast, security-tuned)
+#   - log_investigator        -> Foundation-sec-8B-Reasoning (needs multi-step correlation)
+#   - cti_enrichment          -> Llama 3.3-70B + RAG (Tseng retrieval-augmented pattern)
+#   - attck_mapper            -> Foundation-sec-8B-Reasoning
+#   - report_generator        -> Mistral Small (lightweight, templated output)
+#
+# Fallback: none of the Foundation-sec / Llama / Mistral checkpoints are hosted
+# on a commercial completion API. Two deployment paths are supported:
+#   (a) self-host behind an OpenAI-compatible vLLM/Ollama endpoint -> provider: openai_compatible
+#   (b) substitute a hosted Grok model as a fallback           -> provider: grok
+# Toggle per-role via `provider` below; this file is the only place that changes.
 
 triage:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast
+  provider: openai_compatible
+  endpoint: http://localhost:8001/v1
+  model_id: foundation-sec-8b-instruct
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast
 
 log_investigator:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast
+  provider: openai_compatible
+  endpoint: http://localhost:8002/v1
+  model_id: foundation-sec-8b-reasoning
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast-reasoning
 
 cti_enrichment:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast
+  provider: openai_compatible
+  endpoint: http://localhost:8003/v1
+  model_id: llama-3.3-70b-instruct
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast
 
 attck_mapper:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast
+  provider: openai_compatible
+  endpoint: http://localhost:8002/v1
+  model_id: foundation-sec-8b-reasoning
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast
 
 synthesis:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast-reasoning
+  provider: openai_compatible
+  endpoint: http://localhost:8003/v1
+  model_id: llama-3.3-70b-instruct
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast-reasoning
 
 report_generator:
-  provider: grok
-  endpoint: https://api.x.ai/v1
-  model_id: grok-4-fast
+  provider: openai_compatible
+  endpoint: http://localhost:8004/v1
+  model_id: mistral-small
+  fallback:
+    provider: grok
+    endpoint: https://api.x.ai/v1
+    model_id: grok-4-fast
+
+# Models available for the per-role ablation study referenced in the
+# architecture diagram legend. Not used at runtime; consumed by
+# eval/ablation.py (see docs/ARCHITECTURE.md, section "Improvements").
+ablation_candidates:
+  - foundation-sec-8b-reasoning
+  - llama-3.3-70b-instruct
+  - glm-4.5-air

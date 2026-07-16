@@ -1,10 +1,13 @@
 from state.investigation import SOCInvestigationState
 
-def run_report_generator(state: SOCInvestigationState) -> SOCInvestigationState:
-    """Report Generator agent node using MCP tools."""
-    
+def run_report_generator(state: SOCInvestigationState) -> dict:
+    """Report Generator agent node using MCP tools.
+
+    Returns a partial update, same reasoning as agents/synthesis.py.
+    """
+
     # Needs MCP tools: generateReport, logAuditEntry
-    
+
     report = {
         "executive_summary": "Summary...",
         "evidence_chain": {},
@@ -13,9 +16,8 @@ def run_report_generator(state: SOCInvestigationState) -> SOCInvestigationState:
         "uncertainty_flags": state.get("synthesis_output", {}).get("missing_evidence", []),
         "remediation_proposals": [{"action": "isolateHost", "requires_approval": True}]
     }
-    
-    state["report_output"] = report
-    if "agents_completed" not in state: state["agents_completed"] = []
-    state["agents_completed"].append("report_generator")
-    
-    return state
+
+    return {
+        "report_output": report,
+        "agents_completed": ["report_generator"],
+    }

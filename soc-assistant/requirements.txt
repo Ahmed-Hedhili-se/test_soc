@@ -8,6 +8,7 @@ langgraph-checkpoint-sqlite>=1.0.0
 
 # Vector stores & embeddings
 chromadb>=0.5.0
+langchain-chroma>=0.1.4        # replaces deprecated langchain_community.vectorstores.Chroma
 sentence-transformers>=3.0.0
 
 # API / Networking
@@ -20,3 +21,6 @@ requests>=2.32.0
 # Data validation & Parsing
 pydantic>=2.7.0
 PyYAML>=6.0.1
+
+# Testing (dev)
+pytest>=8.0.0
