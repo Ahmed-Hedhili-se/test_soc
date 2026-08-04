@@ -16,6 +16,8 @@ class LogInvestigatorOutput(BaseModel):
 class CTIEnrichmentOutput(BaseModel):
     indicators: List[Dict[str, Any]]
     cti_context: List[Dict[str, Any]] = []
+    cti_confidence: float = 0.0
+    threat_summary: str = ""
 
 class ATTCKMapperOutput(BaseModel):
     technique_ids: List[str]

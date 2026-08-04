@@ -11,6 +11,10 @@ Endpoints:
   POST /investigations/{id}/decision   -- analyst decision (only path that can populate approved_by)
   GET  /metrics/override-rate          -- retrieve per-agent override rates
 
+The root path `/` redirects to `/ui/`, a static analyst dashboard
+(hitl/ui/index.html) mounted directly off this app -- no separate frontend
+server needed, just port-forward this app's port.
+
 A modify/reject decision drives two independent continual-improvement
 loops (see docs/ARCHITECTURE.md): review.feedback.rag_update refreshes the
 RAG knowledge base's document corpus, and review.feedback.preference_pairs
@@ -18,10 +22,14 @@ records DPO (chosen, rejected) pairs consumed later by training/dpo_train.py.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from review.feedback.rag_update import update_rag_from_correction
@@ -37,16 +45,42 @@ app = FastAPI(
     version="1.0.0",
 )
 
+_UI_DIR = Path(__file__).parent / "ui"
+app.mount("/ui", StaticFiles(directory=str(_UI_DIR), html=True), name="ui")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/ui/")
+
+
 # ---------------------------------------------------------------------------
-# In-memory investigation store (shared with the pipeline)
+# File-backed investigation store (shared with the pipeline; survives
+# server restarts, unlike an in-memory dict)
 # ---------------------------------------------------------------------------
-_investigation_store: Dict[str, Dict[str, Any]] = {}
 _decision_log: List[dict] = []
+_STORE_PATH = Path(__file__).resolve().parents[1] / "data" / "active_investigations.json"
+
+
+def _load_store() -> Dict[str, Any]:
+    if _STORE_PATH.exists():
+        try:
+            return json.loads(_STORE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_store(store: Dict[str, Any]) -> None:
+    _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _STORE_PATH.write_text(json.dumps(store, indent=2), encoding="utf-8")
 
 
 def register_investigation(alert_id: str, state: Dict[str, Any]) -> None:
     """Called by the pipeline runner to register a completed investigation."""
-    _investigation_store[alert_id] = state
+    store = _load_store()
+    store[alert_id] = state
+    _save_store(store)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +102,7 @@ class HITLDecision(BaseModel):
 @app.get("/investigations/", response_model=List[str])
 async def list_investigations():
     """List all registered investigation IDs."""
-    return list(_investigation_store.keys())
+    return list(_load_store().keys())
 
 
 @app.get("/investigations/{id}")
@@ -77,7 +111,7 @@ async def get_investigation_evidence(id: str):
     Returns the evidence chain for a given investigation -- triage, logs,
     CTI, ATT&CK output -- for analyst review BEFORE the verdict is acted upon.
     """
-    state = _investigation_store.get(id)
+    state = _load_store().get(id)
     if not state:
         raise HTTPException(status_code=404, detail=f"Investigation '{id}' not found.")
 
@@ -96,7 +130,7 @@ async def get_investigation_evidence(id: str):
 @app.get("/investigations/{id}/reasoning-trace")
 async def get_reasoning_trace(id: str):
     """Full synthesis reasoning trace -- narrative, confidence, escalation."""
-    state = _investigation_store.get(id)
+    state = _load_store().get(id)
     if not state:
         raise HTTPException(status_code=404, detail=f"Investigation '{id}' not found.")
 
@@ -111,7 +145,7 @@ async def get_reasoning_trace(id: str):
 @app.get("/investigations/{id}/report")
 async def get_report(id: str):
     """Return the full formatted incident report."""
-    state = _investigation_store.get(id)
+    state = _load_store().get(id)
     if not state:
         raise HTTPException(status_code=404, detail=f"Investigation '{id}' not found.")
     return state.get("report_output", {})
@@ -124,11 +158,12 @@ async def receive_decision(id: str, decision: HITLDecision):
     permitted to set `approved_by` on the investigation state.
 
     - approve  -> set approved_by, forward to write MCP tools (simulated)
-    - modify   -> update state fields, trigger RAG update
-    - reject   -> mark as false positive, trigger RAG update
+    - modify   -> update state fields, trigger RAG update + DPO pair capture
+    - reject   -> mark as false positive, trigger RAG update + DPO pair capture
     - escalate -> flag for senior analyst review
     """
-    state = _investigation_store.get(id)
+    store = _load_store()
+    state = store.get(id)
     if not state:
         raise HTTPException(status_code=404, detail=f"Investigation '{id}' not found.")
 
@@ -217,7 +252,8 @@ async def receive_decision(id: str, decision: HITLDecision):
         response_extra["message"] = "Investigation escalated for senior analyst review."
 
     # Persist updated state
-    _investigation_store[id] = state
+    store[id] = state
+    _save_store(store)
 
     return {
         "status":           "decision_recorded",

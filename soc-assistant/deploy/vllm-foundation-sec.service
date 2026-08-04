@@ -1,0 +1,23 @@
+[Unit]
+Description=vLLM OpenAI Compatible Server for Foundation-Sec-8B-Instruct
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/vllm
+Environment="PATH=/opt/vllm-env/bin:$PATH"
+Environment="HF_TOKEN=" # Set token if required
+ExecStart=/opt/vllm-env/bin/python -m vllm.entrypoints.openai.api_server \
+    --model fdtn-ai/Foundation-Sec-8B \
+    --quantization fp8 \
+    --dtype float16 \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 8192 \
+    --max-num-seqs 8 \
+    --port 8000 \
+    --served-model-name foundation-sec-8b-instruct
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

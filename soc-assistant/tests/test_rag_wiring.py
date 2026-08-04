@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 os.environ["SOC_ASSISTANT_MOCK_EMBEDDINGS"] = "1"
+os.environ["SOC_ASSISTANT_MOCK_LLM"] = "1"
 
 SYS_PATH = Path(__file__).parent.parent
 if str(SYS_PATH) not in sys.path:

@@ -1,6 +1,7 @@
 # Core LLM / Agent frameworks
 langchain-core>=0.2.0
 langchain-community>=0.2.0
+langchain-openai>=0.1.0        # config/provider.py -- ChatOpenAI client for any openai_compatible/grok endpoint (incl. Ollama)
 langchain-ollama>=0.1.0
 langchain-huggingface>=0.0.3   # replaces deprecated langchain_community.embeddings.HuggingFaceEmbeddings
 langgraph>=0.2.0

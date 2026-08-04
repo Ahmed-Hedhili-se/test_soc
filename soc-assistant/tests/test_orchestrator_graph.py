@@ -9,6 +9,11 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# No live Ollama/vLLM server in CI -- get_provider() returns a
+# deterministic mock completion per role instead (see config/provider.py).
+os.environ["SOC_ASSISTANT_MOCK_EMBEDDINGS"] = "1"
+os.environ["SOC_ASSISTANT_MOCK_LLM"] = "1"
+
 import pytest
 from orchestrator.graph import build_soc_graph, route_after_triage
 
@@ -16,7 +21,10 @@ from orchestrator.graph import build_soc_graph, route_after_triage
 def make_state(category="credential_access", severity=5.0, confidence=0.5):
     return {
         "alert_id": f"test-{category}",
-        "alert_raw": {"x": 1},
+        # triage (now a real LLM-calling agent, see agents/triage.py) reads
+        # category from alert_raw, not alert_category -- mock-LLM mode
+        # falls back to alert_raw.get("category") when it omits the field.
+        "alert_raw": {"x": 1, "category": category},
         "alert_category": category,
         "alert_timestamp": "2026-01-01",
         "triage_output": {"severity": severity, "category": category},

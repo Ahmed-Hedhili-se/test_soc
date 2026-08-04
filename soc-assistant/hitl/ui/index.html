@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOC Assistant HITL Interface</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --primary: #3b82f6;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --radius: 8px;
+        }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+        }
+        aside {
+            width: 300px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        main {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        h1, h2, h3 { margin-top: 0; }
+        .investigation-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 15px;
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .investigation-card:hover { border-color: var(--primary); }
+        .investigation-card.active { border-color: var(--primary); background: rgba(59,130,246,0.1); }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        pre {
+            background: var(--bg);
+            padding: 15px;
+            border-radius: var(--radius);
+            overflow-x: auto;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            white-space: pre-wrap;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius);
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            color: white;
+        }
+        button:hover { opacity: 0.9; }
+        .btn-approve { background: var(--success); }
+        .btn-modify { background: var(--primary); }
+        .btn-reject { background: var(--warning); }
+        .btn-escalate { background: var(--danger); }
+
+        .hidden { display: none; }
+
+        input, textarea {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px;
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+<aside>
+    <h2>Investigations</h2>
+    <div id="investigation-list">Loading...</div>
+</aside>
+
+<main>
+    <div id="empty-state" style="color: var(--text-muted);">
+        Select an investigation to view details.
+    </div>
+
+    <div id="detail-view" class="hidden">
+        <h1 id="alert-title">Alert ID</h1>
+
+        <div class="panel">
+            <h3>Analyst Action</h3>
+            <textarea id="analyst-note" rows="3" placeholder="Analyst notes or justification..."></textarea>
+            <div class="actions">
+                <button class="btn-approve" onclick="submitDecision('approve')">Approve (Actionable)</button>
+                <button class="btn-modify" onclick="submitDecision('modify')">Modify Verdict</button>
+                <button class="btn-reject" onclick="submitDecision('reject')">Reject (False Positive)</button>
+                <button class="btn-escalate" onclick="submitDecision('escalate')">Escalate (L2)</button>
+            </div>
+            <div id="action-status" style="margin-top:10px; color:var(--success);"></div>
+        </div>
+
+        <div class="panel">
+            <h3>Evidence Chain (Agents)</h3>
+            <pre id="evidence-raw"></pre>
+        </div>
+
+        <div class="panel">
+            <h3>Reasoning & Synthesis</h3>
+            <pre id="synthesis-raw"></pre>
+        </div>
+
+        <div class="panel">
+            <h3>Generated Report</h3>
+            <pre id="report-raw"></pre>
+        </div>
+    </div>
+</main>
+
+<script>
+    let activeId = null;
+
+    async function fetchInvestigations() {
+        try {
+            const res = await fetch('/investigations/');
+            const ids = await res.json();
+            const list = document.getElementById('investigation-list');
+            list.innerHTML = '';
+
+            if(ids.length === 0) {
+                list.innerHTML = '<div style="color:var(--text-muted);">No active investigations.</div>';
+                return;
+            }
+
+            ids.forEach(id => {
+                const el = document.createElement('div');
+                el.className = 'investigation-card';
+                el.innerText = id;
+                if (id === activeId) el.classList.add('active');
+                el.onclick = () => loadInvestigation(id, el);
+                list.appendChild(el);
+            });
+        } catch(e) {
+            console.error(e);
+            document.getElementById('investigation-list').innerText = 'Error loading data.';
+        }
+    }
+
+    async function loadInvestigation(id, el) {
+        activeId = id;
+        document.querySelectorAll('.investigation-card').forEach(c => c.classList.remove('active'));
+        if(el) el.classList.add('active');
+
+        document.getElementById('empty-state').classList.add('hidden');
+        document.getElementById('detail-view').classList.remove('hidden');
+        document.getElementById('action-status').innerText = '';
+        document.getElementById('analyst-note').value = '';
+
+        document.getElementById('alert-title').innerText = `Investigation: ${id}`;
+
+        try {
+            const evRes = await fetch(`/investigations/${id}`);
+            document.getElementById('evidence-raw').innerText = JSON.stringify(await evRes.json(), null, 2);
+
+            const synRes = await fetch(`/investigations/${id}/reasoning-trace`);
+            document.getElementById('synthesis-raw').innerText = JSON.stringify(await synRes.json(), null, 2);
+
+            const repRes = await fetch(`/investigations/${id}/report`);
+            document.getElementById('report-raw').innerText = JSON.stringify(await repRes.json(), null, 2);
+        } catch(e) {
+            console.error(e);
+            alert("Error loading details");
+        }
+    }
+
+    async function submitDecision(action) {
+        if(!activeId) return;
+        const note = document.getElementById('analyst-note').value;
+
+        try {
+            const res = await fetch(`/investigations/${activeId}/decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: action,
+                    analyst_id: "admin-ui",
+                    note: note,
+                    corrected_fields: [],
+                })
+            });
+            const data = await res.json();
+            if(res.ok) {
+                document.getElementById('action-status').innerText = data.message;
+            } else {
+                document.getElementById('action-status').innerText = `Error: ${data.detail}`;
+                document.getElementById('action-status').style.color = "var(--danger)";
+            }
+        } catch(e) {
+            console.error(e);
+            alert("Error submitting decision");
+        }
+    }
+
+    fetchInvestigations();
+    setInterval(fetchInvestigations, 5000); // auto-refresh
+</script>
+</body>
+</html>

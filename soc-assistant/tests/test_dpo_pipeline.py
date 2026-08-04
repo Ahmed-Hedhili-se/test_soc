@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 os.environ["SOC_ASSISTANT_MOCK_EMBEDDINGS"] = "1"
+os.environ["SOC_ASSISTANT_MOCK_LLM"] = "1"
 
 SYS_PATH = Path(__file__).parent.parent
 if str(SYS_PATH) not in sys.path:
@@ -135,7 +136,9 @@ def hitl_client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import hitl.api as hitl_api
 
-    hitl_api._investigation_store.clear()
+    # File-backed store -- point it at a throwaway path so tests never
+    # touch data/active_investigations.json and start from a clean slate.
+    monkeypatch.setattr(hitl_api, "_STORE_PATH", tmp_path / "active_investigations.json")
     hitl_api._decision_log.clear()
     hitl_api.register_investigation("INV-1", {
         "alert_id": "INV-1",

@@ -22,6 +22,9 @@ from datetime import datetime, timezone
 
 # Enable mock embeddings for testing to avoid heavy downloads and network dependencies
 os.environ["SOC_ASSISTANT_MOCK_EMBEDDINGS"] = "1"
+# No live Ollama/vLLM server in CI -- get_provider() returns a
+# deterministic mock completion per role instead (see config/provider.py).
+os.environ["SOC_ASSISTANT_MOCK_LLM"] = "1"
 
 # Ensure soc-assistant is on the path
 SYS_PATH = Path(__file__).parent.parent

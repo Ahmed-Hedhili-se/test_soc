@@ -30,6 +30,15 @@ env/
 /soc-assistant/data/logs/*
 !/soc-assistant/data/logs/.gitkeep
 
+# Runtime-generated data: HITL investigation store, feedback/DPO ledgers,
+# vLLM/Ollama server logs
+/soc-assistant/data/active_investigations.json
+/soc-assistant/data/feedback_log.jsonl
+/soc-assistant/data/dpo_pairs/
+/soc-assistant/data/dpo_promotions.jsonl
+/soc-assistant/vllm_server.log
+/soc-assistant/training/checkpoints/
+
 # Databases
 *.db
 *.sqlite3

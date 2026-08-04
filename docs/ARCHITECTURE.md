@@ -34,7 +34,9 @@ Orchestrator agent  (LangGraph StateGraph; task routing, priority scoring, failu
                           v
               HITL validation interface
      (approve / modify / reject / escalate; the ONLY code
-      path allowed to populate `approved_by`)
+      path allowed to populate `approved_by`. FastAPI app
+      also serves the analyst dashboard at GET /ui, with
+      `/` redirecting there -- no separate frontend server.)
                           |
         +-----------------+-----------------+
         v                 v                  v
@@ -62,23 +64,50 @@ Orchestrator agent  (LangGraph StateGraph; task routing, priority scoring, failu
                                                             gated on held-out reward-margin improvement
 ```
 
+### Agents call a real LLM
+
+Every agent node ([agents/*.py](../soc-assistant/agents/)) calls the
+model configured for its role via
+[`config/provider.py`](../soc-assistant/config/provider.py)`.get_provider(role)`
+-- `triage`, `log_investigator`, `reasoning_synthesis`, and
+`report_generator` send a role-specific system prompt plus pre-fetched
+MCP-tool context and parse a structured JSON completion back into that
+role's output schema (`schemas/agent_io.py` / `models/synthesis.py`).
+`get_provider()` health-checks the role's primary endpoint, falls back to
+its `fallback` block on failure, and enforces a privacy guard:
+`log_investigator` and `reasoning_synthesis` refuse to fall back to a
+non-local provider (see `PrivacyConstraintViolation`) since they handle
+raw internal log data.
+
+Set `SOC_ASSISTANT_MOCK_LLM=1` to skip the network entirely and get a
+deterministic per-role completion instead -- used by the test suite / CI
+/ offline demos, the same convention as `SOC_ASSISTANT_MOCK_EMBEDDINGS`.
+
 ### RAG knowledge base <-> agent connections
 
-`cti_enrichment` and `attck_mapper` are wired to the RAG knowledge base
-via the MCP tool surface in
-[`soc-assistant/mcp_tools/rag/api.py`](../soc-assistant/mcp_tools/rag/api.py):
+`cti_enrichment` and `attck_mapper` additionally pre-fetch deterministic
+context from the RAG knowledge base via the MCP tool surface in
+[`soc-assistant/mcp_tools/rag/api.py`](../soc-assistant/mcp_tools/rag/api.py)
+and feed it into their LLM prompt. If the model's parsed response omits a
+field (including under `SOC_ASSISTANT_MOCK_LLM=1`), the RAG/MCP-derived
+value is used directly instead -- via `parsed.get(...) or <fallback>` --
+so these two agents always return something useful even with no live
+model behind them:
 
 - `cti_enrichment` ([agents/cti_enrichment.py](../soc-assistant/agents/cti_enrichment.py))
-  looks up `source_ip` / `dest_ip` via `lookupIP` (read-only MCP tool),
-  discounts confidence for infrastructure recorded as `shared` in the IOC
-  store ([rag/store_ioc.py](../soc-assistant/rag/store_ioc.py)), and
-  retrieves CTI report context via `retrieveCTIContext` (Chroma, falling
-  back to a built-in table).
+  looks up `source_ip` / `dest_ip` (and any IPs/hashes found in the raw
+  log text) via `lookupIP` / `lookupHash` (read-only MCP tools), discounts
+  confidence for infrastructure recorded as `shared` in the IOC store
+  ([rag/store_ioc.py](../soc-assistant/rag/store_ioc.py)), and retrieves
+  CTI report context via `retrieveCTIContext` (Chroma, falling back to a
+  built-in table).
 - `attck_mapper` ([agents/attck_mapper.py](../soc-assistant/agents/attck_mapper.py))
   resolves candidate techniques for the alert category via
-  `techniquesForCategory`, enriches each via `getTechniqueDetail`, and
-  derives `observed_tactics` / `kill_chain_position` / `predicted_next`
-  via `buildTacticChain`, `killChainPosition`, `predictNextTactics`.
+  `techniquesForCategory`, runs a supplementary semantic search over the
+  raw log text against the ATT&CK Chroma store, enriches each candidate
+  via `getTechniqueDetail`, and derives `observed_tactics` /
+  `kill_chain_position` / `predicted_next` via `buildTacticChain`,
+  `killChainPosition`, `predictNextTactics`.
 - Both agents deliberately key off `alert_raw` / `alert_category` /
   `triage_output` only -- never `log_output` / the other's output --
   since `log_investigator`, `cti_enrichment`, and `attck_mapper` run in
@@ -124,8 +153,17 @@ cheap JSONL append does not.
 Configured in [`soc-assistant/config/models.yaml`](../soc-assistant/config/models.yaml),
 with a documented per-role fallback to a hosted Grok model when the
 Foundation-sec / Llama / Mistral checkpoints are not yet self-hosted behind
-an OpenAI-compatible endpoint. A per-role ablation set
-(`ablation_candidates` in the same file, driven by
+an OpenAI-compatible endpoint.
+
+**Current deployment collapses the above to a single self-hosted Ollama
+model (`gpt-oss:20b`) for every role** -- running 4+ distinct checkpoints
+hit GPU OOM in practice (see `deploy/setup_vllm_server.sh` for the
+alternative per-role vLLM path, kept for when that's viable again).
+Splitting roles back out to distinct models is just pointing each role's
+`endpoint` / `model_id` in `models.yaml` at a different server; no code
+assumes they're the same model.
+
+A per-role ablation set (`ablation_candidates` in the same file, driven by
 [`soc-assistant/eval/ablation.py`](../soc-assistant/eval/ablation.py)) tracks
 Foundation-sec-8B-Reasoning vs Llama 3.3-70B vs GLM-4.5-Air as candidates
 for each role.

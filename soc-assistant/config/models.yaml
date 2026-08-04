@@ -1,6 +1,7 @@
 # config/models.yaml
-# Provider abstraction per agent role.
-# Primary allocation follows the architecture diagram (docs/ARCHITECTURE.md):
+# Provider abstraction per agent role, consumed by config/provider.py.
+#
+# Target architecture (docs/ARCHITECTURE.md) is a distinct model per role:
 #   - orchestrator / synthesis -> Llama 3.3-70B (reasoning-heavy, reconciliation)
 #   - triage                  -> Foundation-sec-8B-Instruct (fast, security-tuned)
 #   - log_investigator        -> Foundation-sec-8B-Reasoning (needs multi-step correlation)
@@ -8,16 +9,25 @@
 #   - attck_mapper            -> Foundation-sec-8B-Reasoning
 #   - report_generator        -> Mistral Small (lightweight, templated output)
 #
-# Fallback: none of the Foundation-sec / Llama / Mistral checkpoints are hosted
-# on a commercial completion API. Two deployment paths are supported:
+# CURRENT deployment collapses that down to a single self-hosted Ollama
+# model for every role (gpt-oss:20b) -- running 4+ distinct checkpoints
+# hit GPU OOM in practice. Splitting roles back out to distinct
+# self-hosted models is just pointing each role's `endpoint`/`model_id`
+# at a different server; nothing else in the codebase assumes they're
+# the same model.
+#
+# Two deployment paths are supported per role:
 #   (a) self-host behind an OpenAI-compatible vLLM/Ollama endpoint -> provider: openai_compatible
-#   (b) substitute a hosted Grok model as a fallback           -> provider: grok
-# Toggle per-role via `provider` below; this file is the only place that changes.
+#   (b) substitute a hosted Grok model as a fallback               -> provider: grok
+# `fallback` is only used if the primary endpoint's health check fails
+# (see config/provider.py); for log_investigator / reasoning_synthesis
+# the privacy guard refuses that fallback rather than silently routing
+# private log data to a hosted API -- those two roles hard-fail instead.
 
 triage:
   provider: openai_compatible
-  endpoint: http://localhost:8001/v1
-  model_id: foundation-sec-8b-instruct
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
@@ -25,8 +35,8 @@ triage:
 
 log_investigator:
   provider: openai_compatible
-  endpoint: http://localhost:8002/v1
-  model_id: foundation-sec-8b-reasoning
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
@@ -34,8 +44,8 @@ log_investigator:
 
 cti_enrichment:
   provider: openai_compatible
-  endpoint: http://localhost:8003/v1
-  model_id: llama-3.3-70b-instruct
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
@@ -43,17 +53,17 @@ cti_enrichment:
 
 attck_mapper:
   provider: openai_compatible
-  endpoint: http://localhost:8002/v1
-  model_id: foundation-sec-8b-reasoning
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
     model_id: grok-4-fast
 
-synthesis:
+reasoning_synthesis:
   provider: openai_compatible
-  endpoint: http://localhost:8003/v1
-  model_id: llama-3.3-70b-instruct
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
@@ -61,8 +71,8 @@ synthesis:
 
 report_generator:
   provider: openai_compatible
-  endpoint: http://localhost:8004/v1
-  model_id: mistral-small
+  endpoint: http://localhost:11434/v1
+  model_id: gpt-oss:20b
   fallback:
     provider: grok
     endpoint: https://api.x.ai/v1
