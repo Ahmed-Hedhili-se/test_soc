@@ -44,8 +44,71 @@ Orchestrator agent  (LangGraph StateGraph; task routing, priority scoring, failu
                                       `approved_by`)
         |
         v
-  Analyst feedback loop -> RAG knowledge base updates
+  Analyst feedback loop  (hitl/api.py POST /decision, action=modify|reject)
+        |
+        +----------------------------+----------------------------------+
+        v                                                                v
+  RAG knowledge base updates                                DPO preference-pair capture
+  (review/feedback/rag_update.py;                           (review/feedback/preference_pairs.py;
+   appends to data/feedback_log.jsonl;                        one (prompt, chosen, rejected) pair
+   document-corpus refresh is a                                per corrected agent role, written to
+   documented future step, not yet                             data/dpo_pairs/<role>.jsonl)
+   live re-embedding into Chroma)                                       |
+                                                                          v
+                                                            training/dpo_train.py (offline, scheduled)
+                                                            per-role DPOTrainer once a role has
+                                                            >= min_pairs_per_role (config/dpo.yaml);
+                                                            promotion into config/models.yaml is
+                                                            gated on held-out reward-margin improvement
 ```
+
+### RAG knowledge base <-> agent connections
+
+`cti_enrichment` and `attck_mapper` are wired to the RAG knowledge base
+via the MCP tool surface in
+[`soc-assistant/mcp_tools/rag/api.py`](../soc-assistant/mcp_tools/rag/api.py):
+
+- `cti_enrichment` ([agents/cti_enrichment.py](../soc-assistant/agents/cti_enrichment.py))
+  looks up `source_ip` / `dest_ip` via `lookupIP` (read-only MCP tool),
+  discounts confidence for infrastructure recorded as `shared` in the IOC
+  store ([rag/store_ioc.py](../soc-assistant/rag/store_ioc.py)), and
+  retrieves CTI report context via `retrieveCTIContext` (Chroma, falling
+  back to a built-in table).
+- `attck_mapper` ([agents/attck_mapper.py](../soc-assistant/agents/attck_mapper.py))
+  resolves candidate techniques for the alert category via
+  `techniquesForCategory`, enriches each via `getTechniqueDetail`, and
+  derives `observed_tactics` / `kill_chain_position` / `predicted_next`
+  via `buildTacticChain`, `killChainPosition`, `predictNextTactics`.
+- Both agents deliberately key off `alert_raw` / `alert_category` /
+  `triage_output` only -- never `log_output` / the other's output --
+  since `log_investigator`, `cti_enrichment`, and `attck_mapper` run in
+  the same parallel LangGraph superstep (see `agents/log_investigator.py`
+  for why returning a sibling's output there would break the graph).
+
+### Continual improvement: two loops, not one
+
+A `modify`/`reject` HITL decision drives two independent loops that share
+a trigger but not a destination:
+
+1. **RAG corpus refresh** (`review/feedback/rag_update.py`) -- cheap,
+   near-real-time, append-only. Currently logs corrections to
+   `data/feedback_log.jsonl`; live re-embedding into the Chroma stores is
+   documented as a future step, not yet implemented.
+2. **DPO preference-pair capture** (`review/feedback/preference_pairs.py`)
+   -- for each agent role whose output slot actually changed between the
+   pre- and post-decision state, records a `(prompt, chosen, rejected)`
+   triple to `data/dpo_pairs/<role>.jsonl`. A bare `reject` with no
+   replacement value produces no pair (there's no "chosen" completion to
+   record). `training/dpo_train.py` consumes these offline, on a
+   schedule -- never from the live request path -- to DPO fine-tune a
+   role's base checkpoint (per-role config in `config/dpo.yaml`), and
+   only promotes (writes back into `config/models.yaml`) a checkpoint
+   whose held-out implicit reward margin clears the configured gate.
+
+The two loops are separate because they target different things: RAG
+retrieval is a document corpus, unaffected by model weights; DPO changes
+a role's model weights and needs a training pipeline + eval gate that a
+cheap JSONL append does not.
 
 ## Model allocation
 
@@ -66,6 +129,14 @@ an OpenAI-compatible endpoint. A per-role ablation set
 [`soc-assistant/eval/ablation.py`](../soc-assistant/eval/ablation.py)) tracks
 Foundation-sec-8B-Reasoning vs Llama 3.3-70B vs GLM-4.5-Air as candidates
 for each role.
+
+Training-time config for the DPO continual-improvement loop (base
+checkpoint per role, pair thresholds, promotion gate) is kept separate,
+in [`soc-assistant/config/dpo.yaml`](../soc-assistant/config/dpo.yaml) --
+`models.yaml` stays purely about serving (which endpoint answers for a
+role right now); a promoted DPO checkpoint is recorded there as
+`dpo_checkpoint` but pointing the live endpoint at it is a separate,
+explicit ops step (see "Continual improvement" above).
 
 ## Safety boundary
 

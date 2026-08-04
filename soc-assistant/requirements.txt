@@ -24,3 +24,12 @@ PyYAML>=6.0.1
 
 # Testing (dev)
 pytest>=8.0.0
+
+# DPO fine-tuning (continual improvement loop -- training/dpo_train.py)
+# Optional: train_role() degrades to a clear skip message if these aren't
+# installed, so the rest of the pipeline works without them.
+torch>=2.2.0
+transformers>=4.42.0
+trl>=0.9.4
+datasets>=2.19.0
+accelerate>=0.30.0

@@ -15,9 +15,11 @@ class LogInvestigatorOutput(BaseModel):
 
 class CTIEnrichmentOutput(BaseModel):
     indicators: List[Dict[str, Any]]
+    cti_context: List[Dict[str, Any]] = []
 
 class ATTCKMapperOutput(BaseModel):
     technique_ids: List[str]
     kill_chain_position: int
     observed_tactics: List[str]
     predicted_next: List[str]
+    technique_details: List[Dict[str, Any]] = []

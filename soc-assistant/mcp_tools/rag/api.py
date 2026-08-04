@@ -113,3 +113,38 @@ def buildTacticChain(technique_ids: list[str]) -> list[str]:
                 tactic_set.add(t["tactic"])
 
     return [tac for tac in _TACTIC_ORDER if tac in tactic_set]
+
+
+def techniquesForCategory(category: Optional[str]) -> list[dict]:
+    """
+    Return the candidate ATT&CK techniques for an alert category -- the
+    starting point for the ATT&CK mapper agent before per-technique
+    enrichment via getTechniqueDetail().
+    """
+    return list(_CATEGORY_TO_TECHNIQUES.get(category or "", []))
+
+
+def killChainPosition(observed_tactics: list[str]) -> int:
+    """
+    1-based index of the furthest-progressed observed tactic in the
+    standard ATT&CK kill-chain order (0 if nothing observed yet).
+    *observed_tactics* is expected to already be ordered, e.g. the output
+    of buildTacticChain().
+    """
+    indices = [_TACTIC_ORDER.index(t) for t in observed_tactics if t in _TACTIC_ORDER]
+    return (max(indices) + 1) if indices else 0
+
+
+def predictNextTactics(observed_tactics: list[str], lookahead: int = 2) -> list[str]:
+    """
+    Naive kill-chain progression forecast: the next *lookahead* tactics in
+    standard ATT&CK order that have not yet been observed, starting right
+    after the furthest-progressed observed tactic.
+    """
+    if not observed_tactics:
+        return []
+    indices = [_TACTIC_ORDER.index(t) for t in observed_tactics if t in _TACTIC_ORDER]
+    if not indices:
+        return []
+    furthest = max(indices)
+    return _TACTIC_ORDER[furthest + 1: furthest + 1 + lookahead]

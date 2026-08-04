@@ -1,0 +1,46 @@
+# config/dpo.yaml
+# Per-role DPO fine-tuning configuration for the analyst feedback loop's
+# second branch (see review/feedback/preference_pairs.py and
+# training/dpo_train.py).
+#
+# This is a SEPARATE concern from config/models.yaml: models.yaml is the
+# inference-time serving config (which endpoint answers for a role right
+# now); base_checkpoints below are the on-disk / hub-id starting points
+# used only at TRAINING time. A role only trains once it has accumulated
+# at least `min_pairs_per_role` preference pairs in
+# data/dpo_pairs/<role>.jsonl, and a trained checkpoint is only promoted
+# (written back into models.yaml) if it clears the eval gate.
+
+min_pairs_per_role: 50
+eval_holdout_fraction: 0.1
+
+# DPOConfig knobs (trl.DPOTrainer) -- conservative low-LR defaults
+# appropriate for correcting a small number of analyst-flagged mistakes
+# rather than a full re-train.
+beta: 0.1
+learning_rate: 5.0e-6
+num_train_epochs: 1
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 4
+max_prompt_length: 1024
+max_length: 2048
+
+# Promotion is blocked unless the trained checkpoint's mean implicit
+# reward margin (chosen_logp - rejected_logp, averaged over the held-out
+# split) improves on the base checkpoint's margin by at least this much.
+min_reward_margin_improvement: 0.0
+
+checkpoint_output_dir: ./training/checkpoints
+
+# Base checkpoint used to start each role's DPO run. These are HF Hub IDs
+# / local paths for the SAME model identified by model_id in
+# config/models.yaml, but resolved to actual weights rather than an
+# inference endpoint URL -- placeholders here until each role is
+# self-hosted (see docs/ARCHITECTURE.md, "Model allocation").
+base_checkpoints:
+  triage: fdtn-ai/Foundation-Sec-8B-Instruct
+  log_investigator: fdtn-ai/Foundation-Sec-8B-Reasoning
+  cti_enrichment: meta-llama/Llama-3.3-70B-Instruct
+  attck_mapper: fdtn-ai/Foundation-Sec-8B-Reasoning
+  reasoning_synthesis: meta-llama/Llama-3.3-70B-Instruct
+  report_generator: mistralai/Mistral-Small-Instruct-2409

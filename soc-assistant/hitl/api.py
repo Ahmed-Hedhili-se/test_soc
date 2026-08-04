@@ -10,6 +10,11 @@ Endpoints:
   GET  /investigations/{id}/report     -- return full incident report
   POST /investigations/{id}/decision   -- analyst decision (only path that can populate approved_by)
   GET  /metrics/override-rate          -- retrieve per-agent override rates
+
+A modify/reject decision drives two independent continual-improvement
+loops (see docs/ARCHITECTURE.md): review.feedback.rag_update refreshes the
+RAG knowledge base's document corpus, and review.feedback.preference_pairs
+records DPO (chosen, rejected) pairs consumed later by training/dpo_train.py.
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from review.feedback.rag_update import update_rag_from_correction
+from review.feedback.preference_pairs import record_preference_pairs_from_decision
 from eval.override_rate import calculate_override_rate_by_role
 
 app = FastAPI(
@@ -161,6 +167,11 @@ async def receive_decision(id: str, decision: HITLDecision):
         )
 
     elif action in ("modify", "reject"):
+        # Snapshot BEFORE any mutation -- this is what each agent actually
+        # saw/produced, and is used both as the DPO "rejected" completion
+        # and as the prompt-context source (see preference_pairs.py).
+        before_state = dict(state)
+
         state["hitl_decision"] = action
         state["analyst_note"]  = decision.note
 
@@ -169,7 +180,7 @@ async def receive_decision(id: str, decision: HITLDecision):
                 if field != "approved_by":  # approved_by can ONLY be set via approve
                     state[field] = value
 
-        # Trigger RAG feedback loop
+        # Trigger RAG feedback loop (document-corpus refresh)
         update_rag_from_correction({
             "investigation_id": id,
             "action":           action,
@@ -178,8 +189,25 @@ async def receive_decision(id: str, decision: HITLDecision):
             "original_verdict": state.get("synthesis_output", {}).get("verdict"),
             "timestamp":        timestamp,
         })
+
+        # Trigger DPO preference-pair capture -- a separate loop from the
+        # RAG corpus refresh above (see docs/ARCHITECTURE.md, "Continual
+        # Improvement"). Only emits a pair per role whose output the
+        # analyst actually replaced via modified_fields.
+        pairs = record_preference_pairs_from_decision(
+            before_state=before_state,
+            after_state=state,
+            investigation_id=id,
+            analyst_id=analyst_id,
+            action=action,
+            note=decision.note,
+            timestamp=timestamp,
+        )
+        response_extra["dpo_pairs_recorded"] = len(pairs)
         response_extra["message"] = (
-            "Decision recorded and RAG feedback loop triggered."
+            "Decision recorded. RAG feedback loop triggered"
+            + (f"; {len(pairs)} DPO preference pair(s) captured." if pairs
+               else "; no DPO preference pairs captured (no replacement value supplied).")
         )
 
     elif action == "escalate":
